@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Question Answering</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 50px auto;
+            text-align: center;
+        }
+
+        input, button {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+        }
+
+        #emailForm {
+            display: none;
+        }
+
+        #answer {
+            margin-top: 20px;
+            font-weight: bold;
+            color: green;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Ask a Question</h2>
+    <form id="questionForm" enctype="multipart/form-data">
+        <input type="text" id="question" placeholder="Enter your question" required><br>
+
+        <button type="button" id="showEmailButton">Enter Email</button>
+
+        <div id="emailForm">
+            <input type="email" id="email" placeholder="Enter your email"><br>
+        </div>
+
+        <textarea id="htmlContent" placeholder="Enter HTML content here..." rows="6"></textarea><br>
+
+        <textarea id="dynamicInput" placeholder="Enter additional text if needed..." rows="3"></textarea><br>
+
+        <input type="file" id="file" accept=".pdf,.xlsx,.txt,.docx,.csv,.jpeg,.png,.md,.zip,.webp"><br>
+        
+        <button type="submit">Get Answer</button>
+        <button type="button" id="resetButton">Reset</button>
+    </form>
+    
+    <p id="answer"></p>
+
+    <script>
+
+        document.addEventListener("DOMContentLoaded", function () {
+            document.getElementById("showEmailButton").addEventListener("click", function () {
+                document.getElementById("emailForm").style.display = "block";
+                document.getElementById("showEmailButton").style.display = "none";
+            });
+
+            // document.getElementById("questionForm").addEventListener("submit", async function (event) {
+            //     event.preventDefault();
+
+            //     console.log("Submit button clicked!"); // ✅ Debugging step 1
+
+            //     let formData = new FormData();
+            //     let question = document.getElementById("question").value;
+            //     let emailInput = document.getElementById("email");
+            //     let email = emailInput ? emailInput.value : "";
+            //     let fileInput = document.getElementById("file");
+            //     let htmlContent = document.getElementById("htmlContent").value;
+
+            //     formData.append("question", question);
+            //     if (email) formData.append("email", email);
+            //     if (htmlContent) formData.append("html_content", htmlContent);
+
+            //     if (fileInput.files.length > 0) {
+            //         console.log("File selected:", fileInput.files[0].name); // ✅ Debugging step 2
+            //         formData.append("file", fileInput.files[0]);
+            //     } else {
+            //         console.log("No file selected!"); // ✅ Debugging step 3
+            //     }
+
+            //     try {
+            //         console.log("Sending request to API..."); // ✅ Debugging step 4
+            //         let response = await fetch("http://127.0.0.1:8000/api/", {
+            //             method: "POST",
+            //             body: formData
+            //         });
+
+            //         console.log("Response received! Processing..."); // ✅ Debugging step 5
+            //         let data = await response.json();
+            //         console.log("Response from server:", data); // ✅ Debugging step 6
+
+            //         if (data.answer) {
+            //             document.getElementById("answer").textContent = "Answer: " + JSON.stringify(data.answer, null, 2);
+            //         } else {
+            //             document.getElementById("answer").textContent = "No answer received.";
+            //         }
+            //     } catch (error) {
+            //         console.error("Error:", error); // ✅ Debugging step 7
+            //         document.getElementById("answer").textContent = "Error fetching answer.";
+            //     }
+            // });
+
+            document.getElementById("questionForm").addEventListener("submit", async function (event) {
+                event.preventDefault();
+
+                let formData = new FormData();
+                let question = document.getElementById("question").value;
+                let emailInput = document.getElementById("email");
+                let email = emailInput ? emailInput.value : "";
+                let htmlContent = document.getElementById("htmlContent").value;
+                let fileInput = document.getElementById("file");
+                let textInput = document.getElementById("dynamicInput").value.trim();
+
+                 // Define questions that require additional text
+                let requiresText = [
+                    "analyze the sentiment",
+                    "input tokens",
+                    "text embedding",
+                    "weather forecast description for"
+                ];
+
+                // Check if the question requires additional text but the user hasn't provided it
+                if (requiresText.some(q => question.toLowerCase().includes(q)) && !textInput) {
+                    alert("⚠️ This question requires additional text. Please enter it in the text field.");
+                    return;
+                }
+
+                // Append text fields
+                formData.append("question", question);
+                if (textInput) formData.append("text", textInput);
+                if (email) formData.append("email", email);
+                if (htmlContent) formData.append("html_content", htmlContent);
+
+                // Append file only if selected
+                if (fileInput.files.length > 0) {
+                    let file = fileInput.files[0];
+                    console.log("File selected:", file.name, "Size:", file.size, "bytes");
+                    formData.append("file", file, file.name);
+                }
+
+                try {
+                    console.log("Sending request to API...");
+                    let response = await fetch("http://127.0.0.1:8000/api/", {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    let data = await response.json();
+                    console.log("Response from server:", data);
+
+                    if (data.answer) {
+                        document.getElementById("answer").textContent = "Answer: " + JSON.stringify(data.answer, null, 2);
+                    } else {
+                        document.getElementById("answer").textContent = "No answer received.";
+                    }
+                } catch (error) {
+                    console.error("Error:", error);
+                    document.getElementById("answer").textContent = "Error fetching answer.";
+                }
+            });
+
+            document.getElementById("resetButton").addEventListener("click", function () {
+                document.getElementById("questionForm").reset();
+                document.getElementById("answer").textContent = "";
+                document.getElementById("emailForm").style.display = "none";
+                document.getElementById("htmlContent").value = "";
+                document.getElementById("showEmailButton").style.display = "block";
+            });
+        });
+
+
+    </script>
+</body>
+
+</html>
