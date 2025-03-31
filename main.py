@@ -1,5 +1,7 @@
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import shutil
 import zipfile
 import os
@@ -30,8 +32,15 @@ from urllib.parse import urlencode
 from geopy.geocoders import Nominatim
 import pdfplumber
 from markdownify import markdownify as md
+from dateutil import parser
+# from fuzzywuzzy import process, fuzz
+# from moviepy.editor import VideoFileClip
+import speech_recognition as sr
 
 app = FastAPI()
+
+# Serve static files (if needed in the future)
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 
 load_dotenv()
 
@@ -113,6 +122,14 @@ ASSIGNMENT_QUESTIONS = {
     "What is the sum total of English marks of students who scored 69 or more marks in Maths in groups 1-33 (including both groups)?"
 
     "What is the markdown content of the PDF."
+
+    "What is the total margin for transactions before Tue May 16 2023 11:44:47 GMT+0530 (India Standard Time) for Iota sold in UK (which may be spelt in different ways)?"
+
+    "How many unique students are there in the file?"
+
+    "How many units of Chair were sold in Tianjin on transactions with at least 51 units?"
+
+    "What is the text of the transcript of this Mystery Story Audiobook between 26.4 and 150.5 seconds?"
 }
 
 
@@ -947,8 +964,202 @@ def convert_pdf_to_markdown(pdf_path):
 
     return markdown_content  # Returns Markdown content as a string
 
-    
+# Standard country name mapping
+COUNTRY_MAPPING = {
+    "USA": "US", "U.S.A": "US", "UNITED STATES": "US", "US": "US",
+    "BRA": "BR", "BRAZIL": "BR", "BR": "BR",
+    "U.K": "UK", "UK": "UK", "UNITED KINGDOM": "UK",
+    "FR": "FRANCE", "FRA": "FRANCE", "FRANCE": "FRANCE",
+    "IND": "INDIA", "IN": "INDIA", "INDIA": "INDIA",
+    "AE": "UAE", "U.A.E": "UAE", "UNITED ARAB EMIRATES": "UAE", "UAE": "UAE"
+}
 
+def convert_to_datetime(date):
+            for fmt in ("%m-%d-%Y", "%Y/%m/%d", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(str(date), fmt)
+                except ValueError:
+                    continue
+            return pd.NaT  # Invalid date formats
+
+def extract_details_from_question(question):
+    """Extracts cutoff date, product, country, and condition (before/after) from the question."""
+    date_match = re.search(r'\b([A-Z][a-z]+ \d{1,2} \d{4} [\d:]+ [A-Z+0-9]+)\b', question)
+    product_match = re.search(r'for ([a-zA-Z0-9]+) sold', question, re.IGNORECASE)
+    country_match = re.search(r'sold in ([a-zA-Z .-]+)', question, re.IGNORECASE)
+    condition_match = re.search(r'\b(before|after)\b', question, re.IGNORECASE)
+    
+    cutoff_date = parser.parse(date_match.group(1)).replace(tzinfo=None) if date_match else None
+    product = product_match.group(1).strip() if product_match else None
+    country = COUNTRY_MAPPING.get(country_match.group(1).strip().upper(), country_match.group(1).strip().upper()) if country_match else None
+    condition = condition_match.group(1).lower() if condition_match else "before"  # Default to "before"
+    print(product)
+    print(country)
+    print(cutoff_date)
+    print(condition)
+    
+    return cutoff_date, product, country, condition
+
+def clean_and_calculate_margin(excel_path, product_name, country_name, cutoff_date, condition="before"):
+    """Cleans Excel data and calculates total margin based on extracted details."""
+    try:
+        df = pd.read_excel(excel_path, engine="openpyxl")
+        # df = pd.read_excel(excel_path)
+        
+        # Trim spaces and standardize country names
+        df['Country'] = df['Country'].str.strip().str.upper().replace(COUNTRY_MAPPING)
+
+        # Convert date column to datetime format (handle multiple formats)
+
+        df['Date'] = df['Date'].apply(convert_to_datetime)
+
+        # Extract product name before "/"
+        df['Product/Code'] = df['Product/Code'].astype(str).str.split('/').str[0].str.strip()
+
+        # Clean and convert Sales & Cost columns
+        df['Sales'] = df['Sales'].astype(str).str.replace("USD", "").str.strip().astype(float)
+        df['Cost'] = pd.to_numeric(df['Cost'].astype(str).str.replace("USD", "").str.strip(), errors='coerce')
+
+        # Handle missing cost values (assume 50% of Sales)
+        df['Cost'].fillna(df['Sales'] * 0.5, inplace=True)
+
+        # Ensure cutoff_date is in the correct format
+        cutoff_date = pd.to_datetime(cutoff_date)
+
+        # Apply filters
+        if condition == "before":
+            df_filtered = df[(df['Date'] <= cutoff_date)]
+        else:
+            df_filtered = df[(df['Date'] > cutoff_date)]
+
+        df_filtered = df_filtered[
+            (df_filtered['Product/Code'].str.lower() == product_name.lower()) &
+            (df_filtered['Country'] == country_name.upper())
+        ]
+
+        # Calculate total margin
+        total_sales = df_filtered['Sales'].sum()
+        total_cost = df_filtered['Cost'].sum()
+
+        if total_sales > 0:
+            total_margin = (total_sales - total_cost) / total_sales
+            return round(total_margin, 4)
+        
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+def count_unique_students(file_path):
+    """Reads a text file, extracts unique student IDs, and returns the count."""
+    student_ids = set()
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            for line in file:
+                matches = re.findall(r'\b[A-Z0-9]{10}\b', line)  # Match exact 10-character alphanumeric IDs
+                student_ids.update(matches)
+        return len(student_ids)
+    except Exception as e:
+        return f"Error: {str(e)}"
+    
+def extract_details_from_question_units(question):
+    """Extracts city, product, and number of units from the question."""
+    city_match = re.search(r'in (\w+)', question, re.IGNORECASE)
+    product_match = re.search(r'of (\w+)', question, re.IGNORECASE)
+    units_match = re.search(r'at least (\d+)', question, re.IGNORECASE)
+    
+    city = city_match.group(1) if city_match else None
+    product = product_match.group(1) if product_match else None
+    units = int(units_match.group(1)) if units_match else None
+    
+    return city, product, units
+
+def process_question(question, file_path):
+    """Processes the question and calls the appropriate function."""
+    if "units of" in question and "sold in" in question:
+        city, product, units = extract_details_from_question_units(question)
+        if city and product and units:
+            response = calculate_total_sales(file_path, product, city, units)
+            return {"answer": int(response)}
+    
+    return {"answer": "Unable to process question."}
+
+def calculate_total_sales(file_path, product, city, min_units):
+    """Reads the data file, processes city names, filters data, and computes total sales."""
+    
+    df = pd.read_json(file_path)
+    
+    # Custom city mappings
+    city_mappings = {
+        "Tianjin": ["Tianjjin", "Tiajin", "Tianjing"],
+        "Beijing": ["Bijing", "Bejjing", "Beijng"],
+        "Shanghai": ["Shangai", "Shangaai", "Shanhai"],
+        "Guangzhou": ["Gwangzhou", "Guangzhoo", "Guanzhou"],
+        "Shenzhen": ["Shenzen", "Shenzheen", "ShenZhen"],
+        "Mumbai": ["Mombai", "Mumbbi", "Mumbay"],
+        "Delhi": ["Dehly", "Dhelhi", "Dehli", "Delly", "Deli"],
+        "Mexico City": ["Mexicoo City", "Mexico Cty", "Mexiko City", "Mexicocity"],
+        "Lagos": ["Laggoss", "Lagoss", "Lagose"],
+        "London": ["Londonn", "Londn", "Lonndon", "Londdon", "Londen"],
+        "Istanbul": ["Istambul", "Istnabul", "Istaanbul", "Istanboul"],
+        "Moscow": ["Moskoww", "Mowscow", "Moskow", "Mosco"],
+        "Paris": ["Parris", "Paries", "Pariss"],
+        "Buenos Aires": ["Buenos Aeres", "Buenoss Aires", "Buenes Aires", "Buienos Aires"],
+        "Cairo": ["Cairio", "Ciro", "Caiiro", "Kairo", "Kairoo"],
+        "Dhaka": ["Dhaaka", "Dhacka", "Dhakaa", "Daka"],
+    }
+    
+    def standardize_city(city_name):
+        for standard, variations in city_mappings.items():
+            if city_name in variations:
+                return standard
+        return city_name
+    
+    df["city"] = df["city"].apply(standardize_city)
+    
+    # Filter data
+    df_filtered = df[(df['product'].str.lower() == product.lower()) & (df['sales'] >= min_units) & (df['city'].str.lower() == city.lower())]
+    
+    # Compute total sales
+    total_sales = df_filtered['sales'].sum()
+    
+    return total_sales
+
+def extract_audio_from_video(video_path, start_sec, end_sec, output_audio_path="temp_audio.wav"):
+    """Extracts audio from a video segment and saves it as a WAV file."""
+    with VideoFileClip(video_path) as video:
+        audio_clip = video.audio.subclip(start_sec, end_sec)
+        audio_clip.write_audiofile(output_audio_path)
+
+def transcribe_audio(audio_filename="temp_audio.wav"):
+    """Transcribes the audio file using Google Web Speech API."""
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(audio_filename) as source:
+        audio = recognizer.record(source)
+
+    try:
+        transcript = recognizer.recognize_google(audio)
+        return transcript
+    except sr.UnknownValueError:
+        return "Sorry, I could not understand the audio."
+    except sr.RequestError as e:
+        return f"Could not request results from Google Speech Recognition service; {e}"
+
+def extract_details_from_question_video(question):
+    """Extracts the video filename and time range from the question."""
+    video_match = re.search(r'from (\S+\.mp4)', question)
+    start_match = re.search(r'from (\d+\.?\d*)', question)
+    end_match = re.search(r'to (\d+\.?\d*)', question)
+    
+    video_file = video_match.group(1) if video_match else None
+    start_sec = float(start_match.group(1)) if start_match else None
+    end_sec = float(end_match.group(1)) if end_match else None
+    
+    return video_file, start_sec, end_sec
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_form():
+    with open("index.html", "r", encoding="utf-8") as file:
+        return HTMLResponse(content=file.read(), status_code=200)
 
 @app.post("/api/")
 async def answer_question(
@@ -1075,6 +1286,28 @@ async def answer_question(
             if "markdown content of the PDF" in question:
                 markdown_output = convert_pdf_to_markdown(file_path)
                 return {"answer": markdown_output}
+
+            if "total margin for transactions" in question:
+                cutoff_date, product, country, condition = extract_details_from_question(question)
+                margin = clean_and_calculate_margin(file_path, product, country, cutoff_date, condition)
+                
+                if isinstance(margin, float):
+                    return {"answer": f"{margin:.4%}"}
+                
+            if "sold" in question and "transactions" in question:
+                response = process_question(question, file_path)
+                return {"answer": response}
+
+            if "unique students" in question:
+                response = count_unique_students(file_path)
+                return {"answer": response}
+            
+            if "transcribe" in question.lower() and "video" in question.lower():
+                video_file, start_sec, end_sec = extract_details_from_question_video(question)
+                if video_file and start_sec is not None and end_sec is not None:
+                    extract_audio_from_video(video_file, start_sec, end_sec)
+                    response = transcribe_audio()
+                    return {"answer": response}
             
             if "Calculate the number of pixels with a certain minimum brightness" in question and file is not None:
                 file_path = os.path.join(UPLOAD_DIR, file.filename)
