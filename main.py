@@ -1156,12 +1156,12 @@ def calculate_total_sales(file_path, product, city, min_units):
 #     return video_file, start_sec, end_sec
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/api/", response_class=HTMLResponse)
 async def serve_form():
     with open("index.html", "r", encoding="utf-8") as file:
         return HTMLResponse(content=file.read(), status_code=200)
 
-@app.post("/api/")
+@app.post("/api/submit")
 async def answer_question(
         question: str = Form(...), 
         email: str = Form(None), 
