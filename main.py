@@ -1123,37 +1123,37 @@ def calculate_total_sales(file_path, product, city, min_units):
     
     return total_sales
 
-def extract_audio_from_video(video_path, start_sec, end_sec, output_audio_path="temp_audio.wav"):
-    """Extracts audio from a video segment and saves it as a WAV file."""
-    with VideoFileClip(video_path) as video:
-        audio_clip = video.audio.subclip(start_sec, end_sec)
-        audio_clip.write_audiofile(output_audio_path)
+# def extract_audio_from_video(video_path, start_sec, end_sec, output_audio_path="temp_audio.wav"):
+#     """Extracts audio from a video segment and saves it as a WAV file."""
+#     with VideoFileClip(video_path) as video:
+#         audio_clip = video.audio.subclip(start_sec, end_sec)
+#         audio_clip.write_audiofile(output_audio_path)
 
-def transcribe_audio(audio_filename="temp_audio.wav"):
-    """Transcribes the audio file using Google Web Speech API."""
-    recognizer = sr.Recognizer()
-    with sr.AudioFile(audio_filename) as source:
-        audio = recognizer.record(source)
+# def transcribe_audio(audio_filename="temp_audio.wav"):
+#     """Transcribes the audio file using Google Web Speech API."""
+#     recognizer = sr.Recognizer()
+#     with sr.AudioFile(audio_filename) as source:
+#         audio = recognizer.record(source)
 
-    try:
-        transcript = recognizer.recognize_google(audio)
-        return transcript
-    except sr.UnknownValueError:
-        return "Sorry, I could not understand the audio."
-    except sr.RequestError as e:
-        return f"Could not request results from Google Speech Recognition service; {e}"
+#     try:
+#         transcript = recognizer.recognize_google(audio)
+#         return transcript
+#     except sr.UnknownValueError:
+#         return "Sorry, I could not understand the audio."
+#     except sr.RequestError as e:
+#         return f"Could not request results from Google Speech Recognition service; {e}"
 
-def extract_details_from_question_video(question):
-    """Extracts the video filename and time range from the question."""
-    video_match = re.search(r'from (\S+\.mp4)', question)
-    start_match = re.search(r'from (\d+\.?\d*)', question)
-    end_match = re.search(r'to (\d+\.?\d*)', question)
+# def extract_details_from_question_video(question):
+#     """Extracts the video filename and time range from the question."""
+#     video_match = re.search(r'from (\S+\.mp4)', question)
+#     start_match = re.search(r'from (\d+\.?\d*)', question)
+#     end_match = re.search(r'to (\d+\.?\d*)', question)
     
-    video_file = video_match.group(1) if video_match else None
-    start_sec = float(start_match.group(1)) if start_match else None
-    end_sec = float(end_match.group(1)) if end_match else None
+#     video_file = video_match.group(1) if video_match else None
+#     start_sec = float(start_match.group(1)) if start_match else None
+#     end_sec = float(end_match.group(1)) if end_match else None
     
-    return video_file, start_sec, end_sec
+#     return video_file, start_sec, end_sec
 
 
 @app.get("/", response_class=HTMLResponse)
